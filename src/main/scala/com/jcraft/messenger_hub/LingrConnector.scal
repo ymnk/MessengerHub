@@ -1,0 +1,245 @@
+/*
+Copyright (c) 2010 ymnk, JCraft,Inc. All rights reserved.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are met:
+
+   1. Redistributions of source code must retain the above copyright notice,
+      this list of conditions and the following disclaimer.
+
+   2. Redistributions in binary form must reproduce the above copyright
+      notice, this list of conditions and the following disclaimer in
+      the documentation and/or other materials provided with the distribution.
+
+   3. The names of the authors may not be used to endorse or promote products
+      derived from this software without specific prior written permission.
+
+ THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED WARRANTIES,
+ INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND
+ FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL JCRAFT,
+ INC. OR ANY CONTRIBUTORS TO THIS SOFTWARE BE LIABLE FOR ANY DIRECT, INDIRECT,
+ INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+ LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA,
+ OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF
+ LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING
+ NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE,
+ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+*/
+
+package com.jcraft.messenger_hub
+
+import java.io._
+import scala.xml._
+import scala.concurrent.ops.spawn
+import scala.actors.Actor
+import scala.actors.Actor.loop
+import scala.collection.mutable.Map
+
+object http{
+  import java.net.URLEncoder.encode
+  import java.net._
+
+  private def param2str(param:(String,String)*):String =
+    (for((k, v)<-param) 
+       yield k+"="+URLEncoder.encode(v, "UTF-8")).mkString("&")
+
+  def post(uri:String, param:(String,String)*):Node={
+    new URL(uri).openConnection match{
+      case c:HttpURLConnection => {
+        c.setDoInput(true)
+        c.setDoOutput(true)
+        c.setUseCaches(false)
+        c.setRequestMethod("POST")
+        c.setRequestProperty("Content-Type", 
+                             "application/x-www-form-urlencoded")
+        val content = param2str(param:_*).getBytes
+        c.setRequestProperty("Content-Length", content.length.toString);
+        val o = c.getOutputStream
+        o.write(content)
+        o.flush
+        o.close
+        XML.load(c.getInputStream)
+      }
+    }
+  }
+
+  def get(uri:String, param:(String,String)*):Node={
+    new URL(uri + "?" + param2str(param:_*)).openConnection match{
+      case c:HttpURLConnection => {
+        c.setRequestMethod("GET")
+        XML.load(c.getInputStream)
+      }
+    }
+  }
+}
+
+object LingrBot{
+  abstract class Event
+  case class Message(roomId:String, 
+                     nickname:String, 
+                     text:String) extends Event{
+    var fromBot = false
+  }
+  case class Exit(roomId:String) extends Event
+  case class Say(roomId:String, text:String) extends Event
+}
+
+class LingrBot(apiKey:String) extends Actor{
+  import http.{get, post}
+  import LingrBot._
+
+  var nickname = "bot"
+
+  val rooms = Map.empty[String, Room]
+
+  private var handler:List[PartialFunction[Event,Unit]] = Nil
+  def addHandler(h:PartialFunction[Event,Unit]){ handler = h::handler }
+
+  private def create:Option[String] = {
+    val response = post("http://www.lingr.com/api/session/create",
+                        ("api_key" -> apiKey))
+    response \\ "status" text match{
+      case "ok" => Some(response \\ "session" text)
+      case _ => None
+    }
+  }
+
+  val Some(session) = create
+
+  def enterRoom(roomId:String)={
+    val response = post("http://www.lingr.com/api/room/enter",
+                        ("session" -> session),
+                        ("id" -> roomId), 
+                        ("nickname" -> nickname))
+    val r = new Room(roomId,
+                     response \\ "ticket" text,
+                     response \\ "occupant_id" text,
+                     response \\ "counter" text)
+    rooms += (roomId -> r)
+    r
+  }
+
+  def observe(roomId:String){
+    val r = enterRoom(roomId)
+    spawn{
+      var loop=true
+      while(loop){
+        rooms.get(roomId) match{
+          case Some(_) => 
+            try{ r.observe }
+            catch{
+              case e:java.io.FileNotFoundException => 
+              case e:java.net.ConnectException => 
+                try{Thread.sleep(1000)}catch{case e=> }
+            }
+          case _ => loop = false
+        }  
+      }
+    }
+  }
+ 
+  class Room(val roomId:String, 
+             val ticket:String, val my_occupant_id:String, _counter:String){
+
+    private var counter = _counter
+    private def setCounter(c:String)=synchronized{ if(c>=counter) counter=c }
+    private def getCounter=synchronized{ counter}
+
+    def observe {
+      val counter = getCounter
+      val response = get("http://www.lingr.com/api/room/observe",
+                         ("session" -> session),
+                         ("ticket" -> ticket), 
+                         ("counter" -> counter))
+
+      response match {
+        case <status>{ok}</status> => 
+        case _ => {
+          val _counter = response \\ "counter" text
+
+          if(counter <= _counter){
+            response \\ "messages" foreach {(m) => 
+              val occupant_id = m \\ "occupant_id" text
+              val nickname = m \\ "nickname" text
+              val text = m \\ "text" text
+
+              val _m = Message(roomId, nickname, text)
+              _m.fromBot = occupant_id==my_occupant_id
+              sendEvent(_m)
+
+              setCounter(_counter)
+            }
+          }
+          else{
+          }
+        }
+      }
+    }
+
+    def say(message:String)={
+      val response = post("http://www.lingr.com/api/room/say",
+                         ("session" -> session),
+                         ("ticket" -> ticket), 
+                         ("message" -> message))
+
+      setCounter(response \\ "counter" text)
+    }
+
+    def exit={
+      val response = post("http://www.lingr.com/api/room/say",
+                         ("session" -> session),
+                         ("ticket" -> ticket))
+
+      if((response \\ "status" text) == "ok"){
+        rooms -= roomId
+      }
+    }
+  } 
+
+  private def sendEvent(event:Event){
+    this ! event
+  }
+
+  def act = {
+    loop {
+      react {
+        case e@Message(roomId, nickname, text) => if(!e.fromBot){
+          handler.foreach{ _(e) }
+        }
+        case Exit(roomId) => {
+          rooms.get(roomId) match{
+            case Some(room) => room.exit
+            case _ => 
+	  }
+        }
+        case Say(roomId, text) => {
+          rooms.get(roomId) match{
+            case Some(room) => room.say(text)
+            case _ => 
+	  }
+        }
+      }
+    }
+  }
+}
+
+class LingrConnector(apiKey:String, 
+                     roomId:String, 
+                     nickname:String) extends Connector{
+  val bot = new LingrBot(apiKey)
+
+  bot.nickname = nickname
+  bot.addHandler({
+    case LingrBot.Message(roomId, nickname, text) =>
+      if(!text.endsWith("has joined") &&
+         !text.endsWith("has left")){
+      writeToOthers(nickname+": "+text)
+      }
+  })
+  bot.observe(roomId)
+  bot.start
+
+  def write(text:String){
+    bot ! LingrBot.Say(roomId, text)
+  }
+}
