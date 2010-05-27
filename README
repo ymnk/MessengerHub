@@ -1,0 +1,60 @@
+MessengerHub
+============
+MessngerHub will exchange messages between messengers.
+In the current implementation, IRC, SkypeChat and Twitter are supported.
+
+
+Requirements
+============
+  * Java6
+  * Scala 2.7
+
+
+Settings
+========
+The configurations will be specified via 'messengerhub.conf' file,
+which is in Conffigy[1] format.
+
+  * SkypeChat
+    Uncomment 'skype' block and set 'chat_id' value.
+    To get the list of skype chat_id, try following command,
+      mvn -Dlauncher=chat-list
+    At first trial, skype will ask you if you allow to get accesses from
+    java app(MessengerHub).
+
+  * Twitter
+    Uncomment 'twitter' block and set 'username'.
+    For the basic authentication, uncomment 'basic-auth' block and fill it.
+    If you prefer OAuth, uncomment 'oauth-auth' block.
+    If you set 'hashtag', it will be appended to messages.
+    If you set 'streaming' as 'true', Twitter Streaming API
+    will be used to retrieve tweets.
+
+  * IRC
+    Uncomment 'irc' block and fill values.
+
+
+HowToRun
+=======
+  mvn scala:run
+
+
+Libraries from Skype4Java
+=========================
+MessengerHub is using Skype4Java[1] and this distribution
+has included following their libraries,
+
+  * libskype.jnilib
+  * libskype.so
+  * skype.dll
+  * skype.jar
+
+
+Copyrights & Disclaimers
+========================
+MessengerHub is copyrighted by ymnk, JCraft,Inc. and is licensed through BSD style 
+license. Read the LICENSE.txt file for the complete license.
+
+
+[1] http://www.lag.net/configgy/
+[2] https://developer.skype.com/wiki/Java_API
