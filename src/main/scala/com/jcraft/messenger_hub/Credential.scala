@@ -27,44 +27,43 @@ modification, are permitted provided that the following conditions are met:
 */
 package com.jcraft.messenger_hub
 
-import java.net.{Authenticator, PasswordAuthentication}
-import java.net.{URL, URLEncoder, HttpURLConnection}
-import scala.xml.{XML, Elem, Node}
-import java.text.SimpleDateFormat
-import scala.collection.mutable.Map
-import java.util.Locale
-import scala.actors.Actor
-import scala.actors.Actor.loop
-import scala.concurrent.ops.spawn
+import java.net.HttpURLConnection
 
-class TwitterConnectorStreaming(credential:Credential) 
-   extends TwitterConnector(credential) {
+abstract class Credential {
+  val username: String
+  def init: Unit = { }
+  def sign(c: HttpURLConnection, params:String)
+}
 
-  override def start = {
+case class BasicCredential(override val username: String, passwd:String) extends Credential {
+  import com.jcraft.oaus.Util.b64encoder
+  val auth = new String(b64encoder("%s:%s".format(username, passwd).getBytes("UTF-8")))
 
-    tweet_interval = tweet_interval / 2
+  def sign(c: HttpURLConnection, params:String) = {
+    c.setRequestProperty("Authorization", "Basic "+auth)
+  }
+}
 
-    credential.init
+case class OAuthCredential(override val username: String, 
+                           consumer_key: String,
+                           consumer_secret: String,
+                           access_token: String,
+                           token_secret: String
+                           ) extends Credential {
+  import com.jcraft.oaus._
 
-    new Poster().start
+  var tokenCredential: TokenCredential = _
+  var oac: OAuthClient = _
 
-    val track = hashtag getOrElse ("@"+credential.username)
+  override def init: Unit = {
+    val clientCredential = ClientCredential(consumer_key, consumer_secret)
+    tokenCredential = TokenCredential(access_token, token_secret)
+    oac = new OAuthClient(clientCredential)
+  }
 
-    // It seems OAuth will be failed if "#" is included in the prameters.
-    val _track = if(track.startsWith("#")) track.substring(1) else track
-
-    spawn{
-      implicit val c = credential
-      TwitterStreamingAPI.track(List(_track)) { case s =>
-        var (text, user_name, screen_name) =
-          (s \ "text" text,
-           s \ "user" \ "name" text,
-           s \ "user" \ "screen_name" text)
-        if(credential.username!=screen_name && text.indexOf(track) != -1){
-          println(" ["+user_name+"] "+text.trim)
-          writeToOthers(user_name+": "+text.trim)
-        }
-      }
+  def sign(c: HttpURLConnection, params:String) = {
+    oac.signPostRequest(c.getURL.toString, params, tokenCredential){
+      (k, v) => c.setRequestProperty(k, v)
     }
   }
 }

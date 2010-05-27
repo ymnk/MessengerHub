@@ -30,17 +30,18 @@ package com.jcraft.messenger_hub
 import java.net.Socket
 import java.io._
 import scala.concurrent.ops.spawn
+
 class IRCConnector(host:String, port:Int,
                    username:String, passwd:String, 
                    channel:String) extends Connector{
 
-  val crlf=Array(0x0d, 0x0a).map(_.asInstanceOf[Byte])
-  var sock:Socket = null
+  private val crlf=Array(0x0d, 0x0a).map(_.asInstanceOf[Byte])
+  private var sock:Socket = null
 
-  var in:BufferedReader = null
-  var out:OutputStream = null
+  private var in:BufferedReader = null
+  private var out:OutputStream = null
 
-  def connect(){
+  private def connect(){
     sock =  new Socket(host, port)
     in = new BufferedReader(new InputStreamReader(sock.getInputStream, "UTF-8"))
     out = sock.getOutputStream
@@ -56,13 +57,17 @@ class IRCConnector(host:String, port:Int,
 
     // if(!msg.startsWith("PONG")){ println("writeRaw: "+msg) }
 
-    val b=try{ msg.getBytes("UTF-8") }
-    catch{ case e:UnsupportedEncodingException => msg.getBytes }
+    val b = try{ 
+      msg.getBytes("UTF-8") 
+    }
+    catch{ 
+      case e:UnsupportedEncodingException => msg.getBytes 
+    }
  
     try{
-    out.write(b)
-    out.write(crlf)
-    out.flush
+      out.write(b)
+      out.write(crlf)
+      out.flush
     }
     catch{
       case e =>
@@ -85,7 +90,7 @@ class IRCConnector(host:String, port:Int,
     case Array(n) => (n, "")
     case Array(n, m@_*) if m(0).startsWith(":") =>
       (n, m.mkString(" ").substring(1))
-              case Array(n, m@_*) => (n, m.mkString(" "))
+    case Array(n, m@_*) => (n, m.mkString(" "))
   }
 
   spawn{

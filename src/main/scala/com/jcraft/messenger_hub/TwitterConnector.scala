@@ -27,7 +27,6 @@ modification, are permitted provided that the following conditions are met:
 */
 package com.jcraft.messenger_hub
 
-import java.net.{Authenticator, PasswordAuthentication}
 import java.net.{URL, URLEncoder, HttpURLConnection}
 import scala.xml.XML
 import java.text.SimpleDateFormat
@@ -37,44 +36,6 @@ import scala.actors.Actor.loop
 import scala.concurrent.ops.spawn
 import scala.concurrent.SyncChannel
 import scala.collection.mutable.Queue
-
-abstract class Credential(val username: String){
-  def init: Unit = { }
-  def sign(c: HttpURLConnection, params:String)
-}
-
-case class BasicCredential(override val username: String, passwd:String) extends Credential(username: String) {
-  import com.jcraft.oaus.Util.b64encoder
-  val auth = new String(b64encoder("%s:%s".format(username, passwd).getBytes("UTF-8")))
-
-  def sign(c: HttpURLConnection, params:String) = {
-    c.setRequestProperty("Authorization", "Basic "+auth)
-  }
-}
-
-case class OAuthCredential(override val username: String, 
-                           consumer_key: String,
-                           consumer_secret: String,
-                           access_token: String,
-                           token_secret: String
-                           ) extends Credential(username: String) {
-  import com.jcraft.oaus._
-
-  var tokenCredential: TokenCredential = _
-  var oac: OAuthClient = _
-
-  override def init: Unit = {
-    val clientCredential = ClientCredential(consumer_key, consumer_secret)
-    tokenCredential = TokenCredential(access_token, token_secret)
-    oac = new OAuthClient(clientCredential)
-  }
-
-  def sign(c: HttpURLConnection, params:String) = {
-    oac.signPostRequest(c.getURL.toString, params, tokenCredential){
-      (k, v) => c.setRequestProperty(k, v)
-    }
-  }
-}
 
 class TwitterConnector(credential: Credential) extends Connector {
 

@@ -33,7 +33,7 @@ class Hub {
   private val lastMessage = Map.empty[Connector, String]
   private val connectors = Set.empty[Connector]
 
-  def += (c:Connector) { 
+  def += (c:Connector) = synchronized { 
     c.hub = this
     c.start 
     connectors += c
@@ -56,10 +56,10 @@ object MessengerHub {
     import net.lag.configgy.Configgy
     import net.lag.logging.Logger
 
-    val hub = new Hub
-
     Configgy.configure(arg(0))
     val config = Configgy.config
+
+    val hub = new Hub
 
     for { 
       m <- config.getConfigMap("skype")

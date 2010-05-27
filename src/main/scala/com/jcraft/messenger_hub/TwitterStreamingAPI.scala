@@ -27,31 +27,23 @@ modification, are permitted provided that the following conditions are met:
 */
 package com.jcraft.messenger_hub
 
-import java.net.{Authenticator, PasswordAuthentication}
-import java.net.{URL, URLEncoder, HttpURLConnection}
+import java.net.{URL, HttpURLConnection}
 import scala.xml.{XML, Elem, Node}
-import java.text.SimpleDateFormat
 import scala.collection.mutable.Map
-import java.util.Locale
-import scala.actors.Actor
-import scala.actors.Actor.loop
-import scala.concurrent.ops.spawn
 
 object http{
   import java.net.URLEncoder.encode
-  import java.net._
-  import java.net.{URL, HttpURLConnection}
   import java.io.{InputStream, IOException}
  
-  private def param2str(param:(String,String)*):String =
+  private def param2str(param:(String,String)*): String =
     (for((k, v)<-param)
-       yield k+"="+URLEncoder.encode(v, "UTF-8")).mkString("&")
+       yield k + "=" + encode(v, "UTF-8")).mkString("&")
 
-  private def consume(in:InputStream, f:Option[String]=>Unit){
+  private def consume(in: InputStream, f: Option[String]=>Unit){
     val buf = new Array[Byte](1024)
-    try{
 
-      def loop() {
+    try{
+      def loop: Unit = {
         var next = true
 
         if(in.available > 0) {
@@ -64,30 +56,36 @@ object http{
           try{ Thread.sleep(100)}catch{case e => }
         }
 
-        if(next) loop()
+        if(next) loop
       }
-      loop()
+
+      loop
 
       f(None)
     }
-    catch{ case e:IOException => }
-    finally{ in.close }
+    catch { 
+      case e:IOException => 
+    }
+    finally{ 
+      in.close 
+    }
   }
 
-  def get(uri:String, param:(String,String)*)(f: Option[String]=>Unit)(implicit crdn:Credential) = {
+  def get(uri:String, param:(String,String)*)
+         (f: Option[String]=>Unit)
+         (implicit crdn:Credential) = {
     new URL(uri + "?" + param2str(param:_*)).openConnection match{
       case c:HttpURLConnection =>
         c.setRequestMethod("GET")
-
         crdn.sign(c, "")
-
         consume(c.getInputStream, f)
       case _ =>
     }
   }
 
-  def post(uri:String, param:(String,String)*)(f: Option[String]=>Unit)(implicit crdn:Credential) ={
-
+  def post(uri:String, param:(String,String)*)
+          (f: Option[String]=>Unit)
+          (implicit crdn:Credential) = {
     new URL(uri).openConnection match{
       case c:HttpURLConnection => {
         c.setDoInput(true)
@@ -98,17 +96,14 @@ object http{
                              "application/x-www-form-urlencoded")
         val content = param2str(param:_*).getBytes
         c.setRequestProperty("Content-Length", content.length.toString);
-
         crdn.sign(c, param2str(param:_*))
-
         val o = c.getOutputStream
         o.write(content)
         o.flush
         o.close
-
         consume(c.getInputStream, f)
       }
-      case _ => None
+      case _ =>
     }
   }
 }
@@ -124,9 +119,9 @@ object TwitterStreamingAPI{
   private val pattern_delete ="^((?s).*?)</delete>((?s).*)".r
   private val pattern_status ="^((?s).*?)</status>((?s).*)".r
 
-  private def parseStatus(queue:Queue[Elem]) = {
+  private def parseStatus(queue:Queue[Elem]): Option[String]=>Unit = {
     var input = ""
-    val proc:Option[String]=>Unit = {
+    val proc: Option[String]=>Unit = {
       case Some(_input) =>
         input = (input + _input) match{
           case pattern_limit(_, y) => y
@@ -141,12 +136,13 @@ object TwitterStreamingAPI{
     proc
   }
 
-  private def spawnQueueReader(f:(Elem) => Unit):Queue[Elem]={
+  private def spawnQueueReader(f:(Elem) => Unit): Queue[Elem] = {
     val queue = new SynchronizedQueue[Elem]
 
     import scala.concurrent.ops.spawn
     spawn{
-      def loop:Unit = queue.dequeueFirst((_)=>true) match{
+
+      def loop:Unit = queue.dequeueFirst((_)=>true) match {
         case Some(e) => f(e); loop
         case _ =>
       }

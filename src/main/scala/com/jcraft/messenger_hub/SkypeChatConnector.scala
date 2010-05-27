@@ -33,6 +33,7 @@ package com.jcraft.messenger_hub
  */
 
 import com.skype.{Skype, Chat, ChatMessage, ChatMessageAdapter} 
+
 class SkypeChatConnector(chatId:String) extends Connector{
 
   Skype.setDeamon(false)
@@ -40,6 +41,7 @@ class SkypeChatConnector(chatId:String) extends Connector{
   val Array(chat) = Skype.getAllChats.filter(_.getId.toString==chatId)
 
   var lastSkypeWriteTime:Long = -1
+
   def write(message:String){
     lastSkypeWriteTime=System.currentTimeMillis
     chat.send(message)
@@ -48,9 +50,9 @@ class SkypeChatConnector(chatId:String) extends Connector{
   val interval:Long = 3*1000
   
   Skype.addChatMessageListener(
-    new ChatMessageAdapter{
-      override def chatMessageReceived(m:ChatMessage)=chatMessage(m)
-      override def chatMessageSent(m:ChatMessage)={
+    new ChatMessageAdapter {
+      override def chatMessageReceived(m:ChatMessage) = chatMessage(m)
+      override def chatMessageSent(m:ChatMessage) = {
         if(System.currentTimeMillis - lastSkypeWriteTime > interval){
           //chatMessage(m)
         }
@@ -84,7 +86,7 @@ object ChatList {
   def main(arg:Array[String]){
     Skype.getAllChats.foreach { c =>
       import c._
-      println(getId+" | "+getWindowTitle)
+      println("Id: "+getId+" , Title: "+getWindowTitle)
     }
   }
 }
