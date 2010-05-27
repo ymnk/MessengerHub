@@ -35,44 +35,6 @@ import scala.actors.Actor
 import scala.actors.Actor.loop
 import scala.collection.mutable.Map
 
-object http{
-  import java.net.URLEncoder.encode
-  import java.net._
-
-  private def param2str(param:(String,String)*):String =
-    (for((k, v)<-param) 
-       yield k+"="+URLEncoder.encode(v, "UTF-8")).mkString("&")
-
-  def post(uri:String, param:(String,String)*):Node={
-    new URL(uri).openConnection match{
-      case c:HttpURLConnection => {
-        c.setDoInput(true)
-        c.setDoOutput(true)
-        c.setUseCaches(false)
-        c.setRequestMethod("POST")
-        c.setRequestProperty("Content-Type", 
-                             "application/x-www-form-urlencoded")
-        val content = param2str(param:_*).getBytes
-        c.setRequestProperty("Content-Length", content.length.toString);
-        val o = c.getOutputStream
-        o.write(content)
-        o.flush
-        o.close
-        XML.load(c.getInputStream)
-      }
-    }
-  }
-
-  def get(uri:String, param:(String,String)*):Node={
-    new URL(uri + "?" + param2str(param:_*)).openConnection match{
-      case c:HttpURLConnection => {
-        c.setRequestMethod("GET")
-        XML.load(c.getInputStream)
-      }
-    }
-  }
-}
-
 object LingrBot{
   abstract class Event
   case class Message(roomId:String, 
@@ -223,7 +185,8 @@ class LingrBot(apiKey:String) extends Actor{
   }
 }
 
-class LingrConnector(apiKey:String, 
+class LingrConnector(credential: Credential,
+                     apiKey:String, 
                      roomId:String, 
                      nickname:String) extends Connector{
   val bot = new LingrBot(apiKey)

@@ -39,15 +39,15 @@ import scala.collection.mutable.Queue
 
 class TwitterConnector(credential: Credential) extends Connector {
 
-  var tweet_interval = 30 * 1000
+  protected var tweet_interval = 30 * 1000
+  var hashtag: Option[String] = None
 
   abstract class MESSAGE
   case object GETTIMELINE extends MESSAGE
   case object TICK extends MESSAGE
 
-  val channel = new Queue[String]
-  var cache:Option[String] = None
-  var hashtag: Option[String] = None
+  private val channel = new Queue[String]
+  private var cache: Option[String] = None
 
   private def append: String = 
     hashtag.map(h => if(h.startsWith(" ")) h else " "+h).getOrElse("")
@@ -62,19 +62,22 @@ class TwitterConnector(credential: Credential) extends Connector {
     channel += chop(short(text) + append)
   }
 
-  private val pattern = "(http://[a-zA-Z0-9%+\\-&=?#./$()!\"$'^~@]+)".r
-
-  private def tinyURL(s:String) = if(s.startsWith("http://tinyurl")) s else
-    io.Source.fromURL(new URL("http://tinyurl.com/api-create.php?url="+s)).mkString("")
-
-  private def replace(s:String, o:String, n:String) = 
-    s.substring(0, s.indexOf(o))+n+s.substring(s.indexOf(o)+o.length)
-
   private def short(s:String): String = {
-    if(s.length < (140 - append.length)) return s
+    val pattern = "(http://[a-zA-Z0-9%+\\-&=?#./$()!\"$'^~@]+)".r
+
+    def tinyURL(s:String) = 
+      if(s.startsWith("http://tinyurl")) 
+        s 
+      else
+        io.Source.fromURL(new URL("http://tinyurl.com/api-create.php?url="+s)).mkString("")
+
+    if(s.length < (140 - append.length)) 
+      return s
+
     var source = s
+
     try{
-      def _short(s:String):String = pattern.findFirstMatchIn(s) map {m =>
+      def _short(s:String):String = pattern.findFirstMatchIn(s) map { m =>
         m.before + tinyURL(m.matched) + _short(m.after.toString)
       } getOrElse s
       source = _short(s)
@@ -94,15 +97,17 @@ class TwitterConnector(credential: Credential) extends Connector {
 
     if(!cache.isEmpty){
       val tweet = cache.get 
-      val url = "http://twitter.com/statuses/update.xml"
+      val url = "http://api.twitter.com/1/statuses/update.xml"
       val urlConn = new URL(url).openConnection.asInstanceOf[HttpURLConnection]
       urlConn.setRequestMethod("POST")
       urlConn.setDoOutput(true);
 
-      credential.sign(urlConn, "status="+tweet)
+      val data = "status="+tweet
+
+      credential.sign(urlConn, data)
 
       val writer = new java.io.PrintWriter(urlConn.getOutputStream)
-      writer.print("status="+tweet)
+      writer.print(data)
       writer.close()
       urlConn.connect()
 
