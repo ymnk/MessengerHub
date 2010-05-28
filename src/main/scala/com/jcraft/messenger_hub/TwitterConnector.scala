@@ -53,16 +53,17 @@ class TwitterConnector(credential: Credential) extends Connector {
     hashtag.map(h => if(h.startsWith(" ")) h else " "+h).getOrElse("")
 
   def write(text:String) {
-    def chop(text:String): String = {
+    def chop(text:String, len:Int): String = {
       text match {
-        case e if e.length>140 => chop(text.substring(0, text.length-1))
+        case e if e.length>len && e.length>0 => chop(e.substring(0, e.length-1), len)
         case e => URLEncoder.encode(e, "UTF-8")
       }
     }
-    channel += chop(short(text) + append)
+    val maxlen = 140 - append.length
+    channel += (chop(shorten(text, maxlen), maxlen) + append)
   }
 
-  private def short(s:String): String = {
+  private def shorten(s:String, len:Int): String = {
     val pattern = "(http://[a-zA-Z0-9%+\\-&=?#./$()!\"$'^~@]+)".r
 
     def tinyURL(s:String) = 
@@ -71,16 +72,16 @@ class TwitterConnector(credential: Credential) extends Connector {
       else
         io.Source.fromURL(new URL("http://tinyurl.com/api-create.php?url="+s)).mkString("")
 
-    if(s.length < (140 - append.length)) 
+    if(s.length <= len)
       return s
 
     var source = s
 
     try{
-      def _short(s:String):String = pattern.findFirstMatchIn(s) map { m =>
-        m.before + tinyURL(m.matched) + _short(m.after.toString)
+      def _shorten(s:String):String = pattern.findFirstMatchIn(s) map { m =>
+        m.before + tinyURL(m.matched) + _shorten(m.after.toString)
       } getOrElse s
-      source = _short(s)
+      source = _shorten(s)
     }
     catch{ case e => println(e) }
 
