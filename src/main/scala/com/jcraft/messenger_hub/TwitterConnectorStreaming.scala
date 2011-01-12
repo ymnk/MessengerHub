@@ -50,17 +50,14 @@ class TwitterConnectorStreaming(credential:Credential)
 
     val track = hashtag getOrElse ("@"+credential.username)
 
-    // It seems OAuth will be failed if "#" is included in the prameters.
-    val _track = if(track.startsWith("#")) track.substring(1) else track
-
     spawn{
       implicit val c = credential
-      TwitterStreamingAPI.track(List(_track)) { case s =>
+      TwitterStreamingAPIJSON.track(List(track)) { case s =>
         var (text, user_name, screen_name) =
           (s \ "text" text,
            s \ "user" \ "name" text,
            s \ "user" \ "screen_name" text)
-        if(credential.username!=screen_name && text.indexOf(track) != -1){
+        if(credential.username!=screen_name){
           println(" ["+user_name+"] "+text.trim)
           writeToOthers(user_name+": "+text.trim)
         }

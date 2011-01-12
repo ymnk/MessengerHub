@@ -108,33 +108,12 @@ object http{
   }
 }
 
-object TwitterStreamingAPI{
+trait TwitterStreamingAPI{
   import scala.collection.mutable.{Queue, SynchronizedQueue}
 
-  private val filter = "http://stream.twitter.com/1/statuses/filter.xml"
+  protected def filter: String
 
-  // ?s will enable the DOTALL mode
-  // *? is the reluctant quantifier, and not greedy.
-  private val pattern_limit ="^((?s).*?)</limit>((?s).*)".r
-  private val pattern_delete ="^((?s).*?)</delete>((?s).*)".r
-  private val pattern_status ="^((?s).*?)</status>((?s).*)".r
-
-  private def parseStatus(queue:Queue[Elem]): Option[String]=>Unit = {
-    var input = ""
-    val proc: Option[String]=>Unit = {
-      case Some(_input) =>
-        input = (input + _input) match{
-          case pattern_limit(_, y) => y
-          case pattern_delete(_, y) => y
-          case pattern_status(x, y) =>
-            queue += XML.loadString(x.trim+"</status>")
-            y
-          case _input => _input
-        }
-      case _ => 
-    }
-    proc
-  }
+  protected def parseStatus(queue:Queue[Elem]): Option[String]=>Unit
 
   private def spawnQueueReader(f:(Elem) => Unit): Queue[Elem] = {
     val queue = new SynchronizedQueue[Elem]
@@ -166,5 +145,91 @@ object TwitterStreamingAPI{
     val queue = spawnQueueReader(f)
     val _track = track.take(200).mkString(",")
     http.post(filter, ("track", _track))(parseStatus(queue))
+  }
+}
+
+object TwitterStreamingAPIJSON extends TwitterStreamingAPI {
+  import scala.collection.mutable.Queue
+
+  protected val filter = "http://stream.twitter.com/1/statuses/filter.json"
+
+  protected def parseStatus(queue:Queue[Elem]): Option[String]=>Unit = {
+
+    import net.liftweb.json.JsonParser
+    import net.liftweb.json.JsonAST.{JString, JField}
+
+    var input = ""
+    val proc: Option[String]=>Unit = {
+      case Some(_input) =>
+        input = (input + _input).split('\r') match { case l =>
+          // l will be Array(valid_json_string, ..., not_terminated_json_string).
+
+          for{ _l <- l.dropRight(1) 
+                 if(_l.length>1)             // skip "Keep-Alive" message
+               json <- net.liftweb.json.JsonParser.parseOpt(_l) 
+                 if json.children.length>1  // skip "delete", "limit" and others
+             }{
+
+            import net.liftweb.json.Xml.toXml
+            queue += <status>{toXml(json)}</status>
+
+/*
+            val JField(_, JString(name)) = json \ "user" \ "name"
+            val JField(_, JString(screen_name)) = json \ "user" \ "screen_name"
+            val JField(_, JString(text)) = json \ "text"
+            // after lift-json 2.2
+	    // val JString(name) = json \ "user" \ "name"
+            // val JString(screen_name) = json \ "user" \ "screen_name"
+            // val JString(text) = json \ "text"
+
+            queue+=
+              <status>
+                <user>
+                  <name>{name}</name>
+                  <screen_name>{screen_name}</screen_name>
+                </user>
+                <text>{text}</text>
+              </status>
+*/
+          }
+          l.last
+        } 
+      case _ => 
+    }
+    proc
+  }
+}
+
+/**
+ * Twitter Streaming APIs must not retrun responses in XML anymore.
+ * So, the following object definition is out-of-date ;-(
+ */ 
+object TwitterStreamingAPIXML extends TwitterStreamingAPI{
+  import scala.collection.mutable.Queue
+
+  protected val filter = "http://stream.twitter.com/1/statuses/filter.xml"
+
+  // ?s will enable the DOTALL mode
+  // *? is the reluctant quantifier, and not greedy.
+  private val pattern_limit ="^((?s).*?)</limit>((?s).*)".r
+  private val pattern_delete ="^((?s).*?)</delete>((?s).*)".r
+  private val pattern_status ="^((?s).*?)</status>((?s).*)".r
+
+  protected def parseStatus(queue:Queue[Elem]): Option[String]=>Unit = {
+
+    var input = ""
+    val proc: Option[String]=>Unit = {
+      case Some(_input) =>
+        input = (input + _input) match{
+          case pattern_limit(_, y) => y
+          case pattern_delete(_, y) => y
+          case pattern_status(x, y) =>
+            queue += XML.loadString(x.trim+"</status>")
+            y
+          case _input => _input
+        }
+      case _ => 
+    }
+    proc
   }
 }
