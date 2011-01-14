@@ -153,6 +153,16 @@ object TwitterStreamingAPIJSON extends TwitterStreamingAPI {
 
   protected val filter = "http://stream.twitter.com/1/statuses/filter.json"
 
+  implicit def _mysplit(s: String) = new {
+    def mysplit(c: Char) = s.indexOf(c) match {
+      case -1 => Array(s)
+      case  _ => s.split(c) match {
+        case a if(a.length == 1) => Array(a(0), "")
+        case a => a
+      }
+    }
+  } 
+
   protected def parseStatus(queue:Queue[Elem]): Option[String]=>Unit = {
 
     import net.liftweb.json.JsonParser
@@ -161,7 +171,7 @@ object TwitterStreamingAPIJSON extends TwitterStreamingAPI {
     var input = ""
     val proc: Option[String]=>Unit = {
       case Some(_input) =>
-        input = (input + _input).split('\r') match { case l =>
+        input = (input + _input).mysplit('\r') match { case l =>
           // l will be Array(valid_json_string, ..., not_terminated_json_string).
 
           for{ _l <- l.dropRight(1) 
